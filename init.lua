@@ -1,24 +1,26 @@
--- watershedmini 0.1.0 by paramat
+-- watershedmini 0.2.0 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL, textures CC BY-SA
 
 -- Parameters
 
-local ZOOM = 32
+local ZOOM = 16 -- Must be 2^n. Reduce octaves to avoid spread of highest octave being < 1
 
 local YMIN = -33000 -- Approximate base of realm stone
 local YMAX = 33000 -- Approximate top of atmosphere / mountains / floatlands
-local TERCEN = -160/ZOOM -- Terrain 'centre', average seabed level
-local YWAT = 0 -- Sea surface y
+local YWAT = 1 -- Sea surface y
 
+local TERCEN = YWAT - 128/ZOOM -- Terrain zero level, average seabed
 local TERSCA = 512/ZOOM -- Vertical terrain scale
-local XLSAMP = 0.2 -- Extra large scale height variation amplitude
-local BASAMP = 0.4 -- Base terrain amplitude
+local XLSAMP = 0.1 -- Extra large scale height variation amplitude
+local BASAMP = 0.3 -- Base terrain amplitude
+local MIDAMP = 0.1 -- Mid terrain amplitude
 local CANAMP = 0.4 -- Canyon terrain maximum amplitude
 local ATANAMP = 1.1 -- Arctan function amplitude, smaller = more and larger floatlands above ridges
-
-local TRIV = -0.02 -- Maximum densitybase threshold for river water
+local BLENEXP = 2 -- Terrain blend exponent
+local TRIVER = -0.028 -- Densitybase threshold for river surface
+local TSTREAM = -0.004 -- Densitymid threshold for stream surface
 
 local HITET = 0.35 -- High temperature threshold
 local LOTET = -0.35 -- Low ..
@@ -26,29 +28,29 @@ local ICETET = -0.7 -- Ice ..
 local HIHUT = 0.35 -- High humidity threshold
 local LOHUT = -0.35 -- Low ..
 
--- 3D noise for rough terrain
+-- 3D noise for terrain
 
-local np_rough = {
+local np_terrain = {
 	offset = 0,
 	scale = 1,
-	spread = {x=512/ZOOM, y=512/ZOOM, z=512/ZOOM},
+	spread = {x=384/ZOOM, y=192/ZOOM, z=384/ZOOM},
 	seed = 593,
 	octaves = 4,
 	persist = 0.67
 }
 
--- 3D noise for smooth terrain
+-- 2D noise for mid terrain / streambed height
 
-local np_smooth = {
+local np_mid = {
 	offset = 0,
 	scale = 1,
-	spread = {x=512/ZOOM, y=512/ZOOM, z=512/ZOOM},
-	seed = 593,
-	octaves = 4,
-	persist = 0.33
+	spread = {x=768/ZOOM, y=768/ZOOM, z=768/ZOOM},
+	seed = 85546,
+	octaves = 5,
+	persist = 0.5
 }
 
--- 2D noise for base terrain / riverbed height, terrain blend, river and river sand depth
+-- 2D noise for base terrain / riverbed height
 
 local np_base = {
 	offset = 0,
@@ -75,9 +77,9 @@ local np_xlscale = {
 local np_temp = {
 	offset = 0,
 	scale = 1,
-	spread = {x=1024/ZOOM, y=1024/ZOOM, z=1024/ZOOM},
+	spread = {x=512/ZOOM, y=512/ZOOM, z=512/ZOOM},
 	seed = 9130,
-	octaves = 2,
+	octaves = 3,
 	persist = 0.5
 }
 
@@ -86,9 +88,9 @@ local np_temp = {
 local np_humid = {
 	offset = 0,
 	scale = 1,
-	spread = {x=1024/ZOOM, y=1024/ZOOM, z=1024/ZOOM},
+	spread = {x=512/ZOOM, y=512/ZOOM, z=512/ZOOM},
 	seed = -55500,
-	octaves = 2,
+	octaves = 3,
 	persist = 0.5
 }
 
@@ -131,6 +133,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local c_ice = minetest.get_content_id("default:ice")
 	
 	local c_freshwater = minetest.get_content_id("watershedmini:freshwater")
+	local c_stone = minetest.get_content_id("watershedmini:stone")
 	local c_grass = minetest.get_content_id("watershedmini:grass")
 	local c_drygrass = minetest.get_content_id("watershedmini:drygrass")
 	local c_icydirt = minetest.get_content_id("watershedmini:icydirt")
@@ -142,11 +145,11 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local minposxyz = {x=x0, y=y0, z=z0} -- 3D and 2D perlinmaps start from these co-ordinates
 	local minposxz = {x=x0, y=z0}
 	-- 3D and 2D perlinmaps
-	local nvals_rough = minetest.get_perlin_map(np_rough, chulens):get3dMap_flat(minposxyz)
-	local nvals_smooth = minetest.get_perlin_map(np_smooth, chulens):get3dMap_flat(minposxyz)
+	local nvals_terrain = minetest.get_perlin_map(np_terrain, chulens):get3dMap_flat(minposxyz)
 	local nvals_temp = minetest.get_perlin_map(np_temp, chulens):get3dMap_flat(minposxyz)
 	local nvals_humid = minetest.get_perlin_map(np_humid, chulens):get3dMap_flat(minposxyz)
 	
+	local nvals_mid = minetest.get_perlin_map(np_mid, chulens):get2dMap_flat(minposxz)
 	local nvals_base = minetest.get_perlin_map(np_base, chulens):get2dMap_flat(minposxz)
 	local nvals_xlscale = minetest.get_perlin_map(np_xlscale, chulens):get2dMap_flat(minposxz)
 	
@@ -157,25 +160,25 @@ minetest.register_on_generated(function(minp, maxp, seed)
 		for y = y0, y1 do -- for each x row progressing upwards
 			local vi = area:index(x0, y, z) -- voxelmanip index for first node in this x row
 			for x = x0, x1 do -- for each node do
-				local n_rough = nvals_rough[nixyz]
-				local n_smooth = nvals_smooth[nixyz]
+				local n_absterrain = math.abs(nvals_terrain[nixyz])
 				local n_temp = nvals_temp[nixyz]
 				local n_humid = nvals_humid[nixyz]
 				
-				local n_base = nvals_base[nixz]
+				local n_absmid = math.abs(nvals_mid[nixz])
+				local n_absbase = math.abs(nvals_base[nixz])
 				local n_xlscale = nvals_xlscale[nixz]
 
+				local n_invbase = (1 - n_absbase)
+				local terblen = (math.max(n_invbase, 0)) ^ BLENEXP
 				local grad = math.atan((TERCEN - y) / TERSCA) * ATANAMP
-				local densitybase = (1 - math.abs(n_base)) * BASAMP + n_xlscale * XLSAMP + grad
-				local terblen = math.max(1 - math.abs(n_base), 0)
-				local terblenexp = terblen ^ 2
-				local canexp = 0.5 + terblenexp
-				local canamp = 0.02 + terblenexp * 0.4
-				local densitycan =
-				(math.abs(n_rough * terblenexp + n_smooth * (1 - terblenexp))) ^ canexp * canamp
-				local density = densitybase + densitycan
-				-- other values
-				local triv = TRIV * (1 - terblen) -- river threshold
+				local densitybase = n_invbase * BASAMP + n_xlscale * XLSAMP + grad
+				local densitymid = n_absmid * MIDAMP + densitybase
+				local canexp = 0.5 + terblen * 0.5
+				local canamp = terblen * CANAMP
+				local density = n_absterrain ^ canexp * canamp * n_absmid + densitymid
+
+				local triver = TRIVER * n_absbase -- river threshold
+				local tstream = TSTREAM * (1 - n_absmid) -- stream threshold
 				
 				local biome = false -- select biome for node
 				if n_temp < LOTET then
@@ -207,10 +210,12 @@ minetest.register_on_generated(function(minp, maxp, seed)
 				if density >= 0 then -- ground
 					if y < YWAT then
 						data[vi] = c_sand
-					elseif biome == 1 then
-						data[vi] = c_icydirt
 					elseif biome == 2 or biome == 3 then
 						data[vi] = c_snowblock
+					elseif grad < -1 then
+						data[vi] = c_stone
+					elseif biome == 1 then
+						data[vi] = c_icydirt
 					elseif biome == 4 then
 						data[vi] = c_drygrass
 					elseif biome == 5 then
@@ -230,7 +235,9 @@ minetest.register_on_generated(function(minp, maxp, seed)
 					else
 						data[vi] = c_water
 					end
-				elseif densitybase >= triv then -- river water
+				elseif densitybase >= triver then -- river water
+					data[vi] = c_freshwater
+				elseif densitybase >= tstream then -- stream water
 					data[vi] = c_freshwater
 				end
 
