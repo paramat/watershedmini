@@ -14,7 +14,29 @@ minetest.register_node("watershedmini:appleleaf", {
 	tiles = {"default_leaves.png"},
 	paramtype = "light",
 	is_ground_content = false,
-	groups = {snappy=3, flammable=2, leaves=1},
+	groups = {snappy=3},
+	sounds = default.node_sound_leaves_defaults(),
+})
+
+minetest.register_node("watershedmini:needles", {
+	description = "Pine needles",
+	drawtype = "allfaces_optional",
+	visual_scale = 1.3,
+	tiles = {"watershedmini_needles.png"},
+	paramtype = "light",
+	is_ground_content = false,
+	groups = {snappy=3},
+	sounds = default.node_sound_leaves_defaults(),
+})
+
+minetest.register_node("watershedmini:acacialeaf", {
+	description = "Acacia leaves",
+	drawtype = "allfaces_optional",
+	visual_scale = 1.3,
+	tiles = {"watershedmini_acacialeaf.png"},
+	paramtype = "light",
+	is_ground_content = false,
+	groups = {snappy=3},
 	sounds = default.node_sound_leaves_defaults(),
 })
 
@@ -25,7 +47,7 @@ minetest.register_node("watershedmini:jungleleaf", {
 	tiles = {"default_jungleleaves.png"},
 	paramtype = "light",
 	is_ground_content = false,
-	groups = {snappy=3, flammable=2, leaves=1},
+	groups = {snappy=3},
 	sounds = default.node_sound_leaves_defaults(),
 })
 

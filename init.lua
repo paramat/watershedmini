@@ -1,7 +1,12 @@
--- watershedmini 0.2.0 by paramat
+-- watershedmini 0.2.1 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL, textures CC BY-SA
+
+-- acacialeaf and needles to mark all biomes
+-- desert stone added
+-- volcanos added
+-- double biome size to match watershed 0.5.0
 
 -- Parameters
 
@@ -21,6 +26,7 @@ local ATANAMP = 1.1 -- Arctan function amplitude, smaller = more and larger floa
 local BLENEXP = 2 -- Terrain blend exponent
 local TRIVER = -0.028 -- Densitybase threshold for river surface
 local TSTREAM = -0.004 -- Densitymid threshold for stream surface
+local TLAVA = 2 -- Maximum densitybase threshold for lava, small because grad is non-linear
 
 local HITET = 0.35 -- High temperature threshold
 local LOTET = -0.35 -- Low ..
@@ -77,7 +83,7 @@ local np_xlscale = {
 local np_temp = {
 	offset = 0,
 	scale = 1,
-	spread = {x=512/ZOOM, y=512/ZOOM, z=512/ZOOM},
+	spread = {x=1024/ZOOM, y=1024/ZOOM, z=1024/ZOOM},
 	seed = 9130,
 	octaves = 3,
 	persist = 0.5
@@ -88,9 +94,20 @@ local np_temp = {
 local np_humid = {
 	offset = 0,
 	scale = 1,
-	spread = {x=512/ZOOM, y=512/ZOOM, z=512/ZOOM},
+	spread = {x=1024/ZOOM, y=1024/ZOOM, z=1024/ZOOM},
 	seed = -55500,
 	octaves = 3,
+	persist = 0.5
+}
+
+-- 2D noise for magma surface
+
+local np_magma = {
+	offset = 0,
+	scale = 1,
+	spread = {x=128/ZOOM, y=128/ZOOM, z=128/ZOOM},
+	seed = -13,
+	octaves = 2,
 	persist = 0.5
 }
 
@@ -129,8 +146,11 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local c_water = minetest.get_content_id("default:water_source")
 	local c_sand = minetest.get_content_id("default:sand")
 	local c_desand = minetest.get_content_id("default:desert_sand")
+	local c_destone = minetest.get_content_id("default:desert_stone")
 	local c_snowblock = minetest.get_content_id("default:snowblock")
 	local c_ice = minetest.get_content_id("default:ice")
+	local c_obsidian = minetest.get_content_id("default:obsidian")
+	local c_lava = minetest.get_content_id("default:lava_source")
 	
 	local c_freshwater = minetest.get_content_id("watershedmini:freshwater")
 	local c_stone = minetest.get_content_id("watershedmini:stone")
@@ -138,7 +158,9 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local c_drygrass = minetest.get_content_id("watershedmini:drygrass")
 	local c_icydirt = minetest.get_content_id("watershedmini:icydirt")
 	local c_appleaf = minetest.get_content_id("watershedmini:appleleaf")
+	local c_needles = minetest.get_content_id("watershedmini:needles")
 	local c_junleaf = minetest.get_content_id("watershedmini:jungleleaf")
+	local c_acaleaf = minetest.get_content_id("watershedmini:acacialeaf")
 	-- perlinmap stuff
 	local sidelen = x1 - x0 + 1 -- chunk sidelength
 	local chulens = {x=sidelen, y=sidelen, z=sidelen} -- chunk dimensions
@@ -152,6 +174,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local nvals_mid = minetest.get_perlin_map(np_mid, chulens):get2dMap_flat(minposxz)
 	local nvals_base = minetest.get_perlin_map(np_base, chulens):get2dMap_flat(minposxz)
 	local nvals_xlscale = minetest.get_perlin_map(np_xlscale, chulens):get2dMap_flat(minposxz)
+	local nvals_magma = minetest.get_perlin_map(np_magma, chulens):get2dMap_flat(minposxz)
 	
 	-- mapgen loop
 	local nixyz = 1 -- 3D and 2D perlinmap indexes
@@ -167,6 +190,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 				local n_absmid = math.abs(nvals_mid[nixz])
 				local n_absbase = math.abs(nvals_base[nixz])
 				local n_xlscale = nvals_xlscale[nixz]
+				local n_magma = nvals_magma[nixz]
 
 				local n_invbase = (1 - n_absbase)
 				local terblen = (math.max(n_invbase, 0)) ^ BLENEXP
@@ -179,6 +203,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 
 				local triver = TRIVER * n_absbase -- river threshold
 				local tstream = TSTREAM * (1 - n_absmid) -- stream threshold
+				local tlava = TLAVA * (1 - n_magma ^ 4 * terblen ^ 16 * 0.6) -- lava threshold
 				
 				local biome = false -- select biome for node
 				if n_temp < LOTET then
@@ -207,13 +232,25 @@ minetest.register_on_generated(function(minp, maxp, seed)
 					end
 				end
 
-				if density >= 0 then -- ground
+				if densitybase >= tlava then -- lava
+					if densitybase >= 0 then
+						data[vi] = c_lava
+					end
+				elseif densitybase >= tlava - math.min(0.6 + density * 6, 0.6) and density < 0 then -- obsidian
+					data[vi] = c_obsidian
+				elseif density >= 0 then -- ground
 					if y < YWAT then
 						data[vi] = c_sand
-					elseif biome == 2 or biome == 3 then
+					elseif biome == 2 then
 						data[vi] = c_snowblock
+					elseif biome == 3 then
+						data[vi] = c_needles
 					elseif grad < -1 then
-						data[vi] = c_stone
+						if biome == 7 then
+							data[vi] = c_destone
+						else
+							data[vi] = c_stone
+						end
 					elseif biome == 1 then
 						data[vi] = c_icydirt
 					elseif biome == 4 then
@@ -225,7 +262,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 					elseif biome == 7 then
 						data[vi] = c_desand
 					elseif biome == 8 then
-						data[vi] = c_drygrass
+						data[vi] = c_acaleaf
 					elseif biome == 9 then
 						data[vi] = c_junleaf
 					end
