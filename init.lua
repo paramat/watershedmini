@@ -1,38 +1,42 @@
--- watershedmini 0.2.1 by paramat
+-- watershedmini 0.2.2 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL, textures CC BY-SA
 
--- acacialeaf and needles to mark all biomes
--- desert stone added
--- volcanos added
--- double biome size to match watershed 0.5.0
+-- map level to 4008, above clouds
+-- xyz limits set to +/-2000
+-- spawn player at map y
 
 -- Parameters
 
 local ZOOM = 16 -- Must be 2^n. Reduce octaves to avoid spread of highest octave being < 1
 
-local YMIN = -33000 -- Approximate base of realm stone
-local YMAX = 33000 -- Approximate top of atmosphere / mountains / floatlands
-local YWAT = 1 -- Sea surface y
+local XMIN = -2000 -- Map limits
+local XMAX = 2000
+local YMIN = 2000
+local YMAX = 6000
+local ZMIN = -2000
+local ZMAX = 2000
 
-local TERCEN = YWAT - 128/ZOOM -- Terrain zero level, average seabed
-local TERSCA = 512/ZOOM -- Vertical terrain scale
-local XLSAMP = 0.1 -- Extra large scale height variation amplitude
-local BASAMP = 0.3 -- Base terrain amplitude
-local MIDAMP = 0.1 -- Mid terrain amplitude
-local CANAMP = 0.4 -- Canyon terrain maximum amplitude
-local ATANAMP = 1.1 -- Arctan function amplitude, smaller = more and larger floatlands above ridges
-local BLENEXP = 2 -- Terrain blend exponent
-local TRIVER = -0.028 -- Densitybase threshold for river surface
-local TSTREAM = -0.004 -- Densitymid threshold for stream surface
-local TLAVA = 2 -- Maximum densitybase threshold for lava, small because grad is non-linear
+local YWAT = 4008 -- Sea surface y
 
-local HITET = 0.35 -- High temperature threshold
-local LOTET = -0.35 -- Low ..
-local ICETET = -0.7 -- Ice ..
-local HIHUT = 0.35 -- High humidity threshold
-local LOHUT = -0.35 -- Low ..
+local TERCEN = YWAT - 128/ZOOM
+local TERSCA = 512/ZOOM
+local XLSAMP = 0.1
+local BASAMP = 0.3
+local MIDAMP = 0.1
+local CANAMP = 0.4
+local ATANAMP = 1.1
+local BLENEXP = 2
+local TRIVER = -0.028
+local TSTREAM = -0.004
+local TLAVA = 2
+
+local HITET = 0.35
+local LOTET = -0.35
+local ICETET = -0.7
+local HIHUT = 0.35
+local LOHUT = -0.35
 
 -- 3D noise for terrain
 
@@ -121,10 +125,27 @@ minetest.register_on_mapgen_init(function(mgparams)
 	minetest.set_mapgen_params({mgname="singlenode"})
 end)
 
+-- Spawn player
+
+function spawnplayer(player)
+	player:setpos({x=0, y=4024, z=0})
+end
+
+minetest.register_on_newplayer(function(player)
+	spawnplayer(player)
+end)
+
+minetest.register_on_respawnplayer(function(player)
+	spawnplayer(player)
+	return true
+end)
+
 -- On generated function
 
 minetest.register_on_generated(function(minp, maxp, seed)
-	if minp.y < YMIN or maxp.y > YMAX then
+	if minp.x < XMIN or maxp.x > XMAX
+	or minp.y < YMIN or maxp.y > YMAX
+	or minp.z < ZMIN or maxp.z > ZMAX then
 		return
 	end
 
